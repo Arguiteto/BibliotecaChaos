@@ -13,5 +13,5 @@
 
 const CONFIG = {
   PASTA_DRIVE_ID: "1_pM4hBtXswX4j1mXFZ4yK3gZhfI2SEfa",
-  API_KEY: ""
+  API_KEY: "AIzaSyCqqurOSdIEgXDXvOpkzwaCGNXZ1oRW16U"
 };

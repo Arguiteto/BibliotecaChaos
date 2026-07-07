@@ -95,6 +95,48 @@ async function paginaParaImagem(doc, num, largura){
   return canvas.toDataURL('image/jpeg', 0.82);
 }
 
+/* ---------- Zoom (só na folha do livro, não afeta os controles) ---------- */
+const ZOOM_MIN = 1, ZOOM_MAX = 2.6;
+let zoom = 1;
+const palco = $('palco'), bookEl = $('book');
+
+function aplicarZoom(novo){
+  zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, novo));
+  bookEl.style.transform = `scale(${zoom})`;
+}
+
+// Ctrl + roda do mouse, ou pinça de trackpad (o navegador reporta como wheel com ctrlKey)
+palco.addEventListener('wheel', (e) => {
+  if(!e.ctrlKey) return;         // sem Ctrl, deixa a rolagem normal acontecer
+  e.preventDefault();
+  aplicarZoom(zoom - e.deltaY * 0.0025);
+}, { passive: false });
+
+// Pinça por toque (celular/tablet)
+let pinchDist0 = null, zoom0 = 1;
+function distancia(t){
+  const dx = t[0].clientX - t[1].clientX, dy = t[0].clientY - t[1].clientY;
+  return Math.hypot(dx, dy);
+}
+palco.addEventListener('touchstart', (e) => {
+  if(e.touches.length === 2){
+    pinchDist0 = distancia(e.touches);
+    zoom0 = zoom;
+  }
+}, { passive: true });
+palco.addEventListener('touchmove', (e) => {
+  if(e.touches.length === 2 && pinchDist0){
+    e.preventDefault();
+    aplicarZoom(zoom0 * (distancia(e.touches) / pinchDist0));
+  }
+}, { passive: false });
+palco.addEventListener('touchend', () => { pinchDist0 = null; });
+
+// Duplo clique no livro reseta o zoom
+bookEl.addEventListener('dblclick', () => aplicarZoom(1));
+
+function resetarZoom(){ aplicarZoom(1); }
+
 /* ---------- Leitor / folhear ---------- */
 let pdf = null, P = 0, spread = 0, maxSpread = 0, ocupado = false;
 const cache = new Map();
@@ -115,6 +157,7 @@ async function abrirLivro(livro){
   $('tituloLivro').textContent = livro.titulo;
   $('carregando').hidden = false;
   cache.clear(); spread = 0;
+  resetarZoom();
 
   pdf = await pdfjsLib.getDocument(livro.url).promise;
   P = pdf.numPages;
@@ -191,6 +234,7 @@ async function virar(dir){
 function voltarEstante(){
   leitor.hidden = true; estante.hidden = false;
   pdf = null; cache.clear();
+  resetarZoom();
 }
 
 /* ---------- Eventos ---------- */

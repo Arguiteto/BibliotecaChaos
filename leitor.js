@@ -12,7 +12,7 @@ const $ = (id) => document.getElementById(id);
 const estante = $('estante'), leitor = $('leitor');
 const prateleira = $('prateleira'), estanteVazia = $('estanteVazia');
 
-const RENDER_W = 760;   // largura de renderização de cada página (px)
+const RENDER_W = 1300;  // largura de renderização de cada página (px)
 const FLIP_MS  = 600;   // duração da virada — combine com o CSS
 
 const usaDrive = typeof CONFIG !== 'undefined' && CONFIG.WORKER_URL;

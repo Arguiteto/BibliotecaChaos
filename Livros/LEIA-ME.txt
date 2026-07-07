@@ -1,8 +1,0 @@
-Coloque aqui os arquivos .pdf dos livros.
-
-Dicas:
-- Prefira nomes simples, sem caracteres estranhos. Espaços e acentos funcionam.
-- Cada arquivo precisa ter menos de 100 MB (limite do GitHub).
-  Se um livro for maior, comprima o PDF antes de subir.
-- Depois de adicionar os PDFs, atualize o arquivo livros.json (uma linha por livro)
-  OU deixe a automação (.github/workflows) gerar a lista sozinha.

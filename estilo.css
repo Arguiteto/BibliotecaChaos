@@ -1,0 +1,78 @@
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#f3e6cf;
+  background:#150c04;overflow:hidden}
+
+/* ---------- Cenário / corredor ---------- */
+.hall{position:fixed;inset:0;z-index:0}
+.bgwall{position:absolute;inset:0;background:linear-gradient(180deg,#2b1c10,#241609 60%,#150c04)}
+.shelf{position:absolute;top:0;bottom:150px;width:19vw;max-width:230px;
+  background:repeating-linear-gradient(0deg,#3a2513 0 8px,#2c1b0d 8px 15px),
+            repeating-linear-gradient(90deg,#4a3018 0 30px,#3a2513 30px 35px)}
+.shelf.esq{left:0;box-shadow:inset -30px 0 50px rgba(0,0,0,.6)}
+.shelf.dir{right:0;box-shadow:inset 30px 0 50px rgba(0,0,0,.6)}
+.books-deco{position:absolute;left:0;right:0;bottom:120px;height:92px;opacity:.85;
+  transform:perspective(700px) rotateX(32deg);transform-origin:bottom;border-radius:3px;
+  background:repeating-linear-gradient(90deg,#c96f2e 0 14px,#a2551f 14px 18px,#7d8a55 18px 30px,
+    #5f6b3d 30px 34px,#3f6785 34px 48px,#2d4d66 48px 52px,#8a4a55 52px 64px,#6d3a44 64px 68px);
+  box-shadow:0 -8px 22px rgba(0,0,0,.45)}
+.floor{position:absolute;left:0;right:0;bottom:0;height:150px;
+  background:linear-gradient(180deg,#3a2410,#1e1206);box-shadow:inset 0 24px 46px rgba(0,0,0,.55)}
+
+/* ---------- Estante (seleção) ---------- */
+.estante{position:relative;z-index:5;height:100%;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;padding:24px;text-align:center}
+.titulo{font-size:34px;font-weight:500;margin:0;letter-spacing:.5px}
+.subtitulo{margin:6px 0 26px;color:#c9b596;font-size:15px}
+.prateleira{display:flex;flex-wrap:wrap;gap:26px;justify-content:center;align-items:flex-end;
+  max-width:900px;max-height:60vh;overflow:auto;padding:6px 4px}
+.livro-capa{width:150px;cursor:pointer;transition:transform .18s;background:none;border:none;padding:0;color:inherit}
+.livro-capa:hover{transform:translateY(-6px)}
+.livro-capa .capa{width:150px;height:212px;border-radius:3px 6px 6px 3px;background:#2c1b0d;
+  box-shadow:0 16px 30px rgba(0,0,0,.5),inset 6px 0 12px rgba(0,0,0,.35);overflow:hidden;
+  display:flex;align-items:center;justify-content:center}
+.livro-capa .capa img{width:100%;height:100%;object-fit:cover;display:block}
+.livro-capa .nome{margin-top:10px;font-size:12.5px;color:#e9dcc4;line-height:1.35;
+  max-width:150px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.vazia{color:#c9b596;font-size:14px;max-width:420px;line-height:1.6}
+
+/* ---------- Leitor ---------- */
+.leitor{position:relative;z-index:5;height:100%}
+.voltar{position:absolute;top:20px;left:20px;z-index:9;background:rgba(0,0,0,.4);color:#f3e6cf;
+  border:none;padding:9px 16px;border-radius:999px;font-size:13px;cursor:pointer}
+.voltar:hover{background:rgba(0,0,0,.6)}
+.faixa-titulo{position:absolute;top:22px;left:50%;transform:translateX(-50%);z-index:8;
+  background:rgba(0,0,0,.4);padding:7px 18px;border-radius:999px;font-size:13.5px;max-width:70vw;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.palco{position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center}
+.book{position:relative;width:660px;max-width:92vw;height:470px;max-height:66vh;perspective:2400px}
+.board{position:absolute;inset:-16px;background:#241813;border-radius:10px;box-shadow:0 40px 80px rgba(0,0,0,.6)}
+.pagina{position:absolute;top:0;height:100%;width:50%;background:#241813;overflow:hidden}
+.pagina.left{left:0;border-radius:8px 0 0 8px}
+.pagina.right{right:0;border-radius:0 8px 8px 0}
+.pagina img,.face img{width:100%;height:100%;object-fit:contain;display:block;background:#f3ecdb}
+.spine{position:absolute;left:50%;top:0;width:4px;height:100%;transform:translateX(-2px);z-index:60;
+  background:linear-gradient(90deg,rgba(70,45,20,.4),rgba(70,45,20,.05),rgba(70,45,20,.4))}
+
+/* Folha que vira */
+.flipper{position:absolute;top:0;right:0;width:50%;height:100%;transform-origin:left center;
+  transform-style:preserve-3d;transition:transform .6s cubic-bezier(.25,.72,.2,1);
+  will-change:transform;z-index:50;transform:rotateY(0deg);opacity:0;pointer-events:none}
+.flipper.on{opacity:1}
+.face{position:absolute;inset:0;backface-visibility:hidden;overflow:hidden;background:#f3ecdb}
+.face.front{border-radius:0 8px 8px 0;box-shadow:inset 16px 0 26px rgba(120,90,50,.14)}
+.face.back{transform:rotateY(180deg);border-radius:8px 0 0 8px;box-shadow:inset -16px 0 26px rgba(120,90,50,.18)}
+.shade{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .6s ease}
+.face.front .shade{background:linear-gradient(90deg,rgba(0,0,0,.28),rgba(0,0,0,0) 55%)}
+.face.back .shade{background:linear-gradient(270deg,rgba(0,0,0,.28),rgba(0,0,0,0) 55%)}
+
+.nav{position:absolute;bottom:40px;left:50%;transform:translateX(-50%);z-index:9;
+  display:flex;align-items:center;gap:16px}
+.rd{width:46px;height:46px;border-radius:50%;border:none;cursor:pointer;font-size:20px;
+  background:rgba(243,230,207,.92);color:#3a2e20;transition:transform .15s,background .15s}
+.rd:hover{background:#fff;transform:scale(1.06)}
+.rd:disabled{opacity:.3;cursor:default;transform:none}
+.contador{min-width:88px;text-align:center;font-size:14px}
+.dica{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);z-index:9;color:#c9b596;font-size:12px}
+.carregando{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9;
+  background:rgba(0,0,0,.55);padding:10px 18px;border-radius:8px;font-size:13px}

@@ -1,0 +1,20 @@
+[
+  {
+    "titulo": "A Arte de Projetar em Arquitetura",
+    "autor": "Ernst Neufert",
+    "edicao": "19ª ed.",
+    "editora": "Gustavo Gili",
+    "isbn": "978-85-8256-070-8",
+    "categoria": "Referência técnica / Dimensionamento",
+    "fonte_consulta": "Acervo institucional Uniderp / compra em editora oficial"
+  },
+  {
+    "titulo": "Outro livro aqui",
+    "autor": "...",
+    "edicao": "...",
+    "editora": "...",
+    "isbn": "...",
+    "categoria": "...",
+    "fonte_consulta": "..."
+  }
+]

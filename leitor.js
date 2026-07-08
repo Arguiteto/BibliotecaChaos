@@ -680,19 +680,22 @@ async function prepararFlip(dir){
   void flip.offsetWidth;
   return true;
 }
-/* anima o flipper (e as sombras) ate 'ang' em 'ms', com inercia (ease-out) */
-function animarFlip(ang, ms){
+/* anima o flipper quadro a quadro (de -> para), desenhando a sombra a cada
+   frame — assim o clique/setas ficam identicos ao arraste (a sombra pulsa
+   no meio da dobra em vez de so sumir). ease-out cubico da a inercia. */
+function tweenFlip(de, para, ms){
   return new Promise(res => {
     const flip = $('flipper');
-    flip.style.transition = 'transform ' + ms + 'ms cubic-bezier(.22,.61,.25,1)';
-    _fFrontShade.style.transition = 'opacity ' + ms + 'ms ease';
-    _fBackShade.style.transition  = 'opacity ' + ms + 'ms ease';
-    requestAnimationFrame(() => setFlipAngle(ang));
-    let done = false;
-    const fim = () => { if(done) return; done = true;
-      flip.removeEventListener('transitionend', fim); res(); };
-    flip.addEventListener('transitionend', fim);
-    setTimeout(fim, ms + 90);
+    flip.style.transition = 'none';
+    _fFrontShade.style.transition = 'none'; _fBackShade.style.transition = 'none';
+    const t0 = performance.now();
+    const ease = (x) => 1 - Math.pow(1 - x, 3);
+    function frame(now){
+      const k = Math.min(1, (now - t0) / ms);
+      setFlipAngle(de + (para - de) * ease(k));
+      if(k < 1) requestAnimationFrame(frame); else res();
+    }
+    requestAnimationFrame(frame);
   });
 }
 function ocultarFlipper(){
@@ -722,7 +725,7 @@ async function virar(dir){
   ocupado = true;
   const ok = await prepararFlip(dir);
   if(!ok){ ocupado = false; return; }
-  await animarFlip(dir > 0 ? -180 : 0, FLIP_MS);
+  await tweenFlip(dir > 0 ? 0 : -180, dir > 0 ? -180 : 0, FLIP_MS);
   const ns = s + dir; atual = ns === 0 ? 1 : 2 * ns;
   await mostrarSpread();
   requestAnimationFrame(() => { ocultarFlipper(); ocupado = false; preload(); });
@@ -789,7 +792,7 @@ async function soltarSpread(d, completar){
   const alvo = completar ? (dir > 0 ? -180 : 0) : (dir > 0 ? 0 : -180);
   const restante = Math.abs(alvo - d.ang) / 180;
   const ms = Math.max(130, Math.round(FLIP_MS * restante));
-  await animarFlip(alvo, ms);
+  await tweenFlip(d.ang, alvo, ms);
   if(completar){ const ns = flipS + dir; atual = ns === 0 ? 1 : 2 * ns; }
   await mostrarSpread();
   requestAnimationFrame(() => { ocultarFlipper(); ocupado = false; preload(); });

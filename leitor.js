@@ -638,6 +638,70 @@ function preload(){
   nums.forEach(n => { if(n && n >= 1 && n <= P) pag(n); });
 }
 
+/* ---------- nucleo da virada 3D: angulo + sombra que segue a dobra ---------- */
+let _fFront = null, _fBack = null, _fFrontShade = null, _fBackShade = null;
+function cacheFlipEls(){
+  const flip = $('flipper');
+  _fFront = $('imgFront'); _fBack = $('imgBack');
+  _fFrontShade = flip.querySelector('.face.front .shade');
+  _fBackShade  = flip.querySelector('.face.back .shade');
+}
+/* aplica o angulo (graus, 0 a -180) e ajusta a sombra: pico no meio da dobra */
+function setFlipAngle(ang){
+  const flip = $('flipper');
+  flip.style.transform = 'rotateY(' + ang + 'deg)';
+  const t = Math.min(1, Math.abs(ang) / 180);
+  const s = Math.sin(t * Math.PI);          // 0 nas pontas, 1 no meio
+  if(t < 0.5){ _fFrontShade.style.opacity = s; _fBackShade.style.opacity = 0; }
+  else       { _fFrontShade.style.opacity = 0; _fBackShade.style.opacity = s; }
+}
+/* prepara as faces do flipper para virar em 'dir' a partir do spread atual */
+async function prepararFlip(dir){
+  const s = spreadDe(atual);
+  if(dir > 0 && s >= maxSpread) return false;
+  if(dir < 0 && s <= 0) return false;
+  cacheFlipEls();
+  if(dir > 0){
+    _fFront.src = await pag(rightNum(s));
+    _fBack.src  = await pag(leftNum(s + 1));
+    $('imgRight').src = await pag(rightNum(s + 1));
+  } else {
+    _fFront.src = await pag(rightNum(s - 1));
+    _fBack.src  = await pag(leftNum(s));
+    $('imgLeft').src = await pag(leftNum(s - 1));
+  }
+  flipS = s;
+  const flip = $('flipper');
+  flip.style.transition = 'none';
+  _fFrontShade.style.transition = 'none'; _fBackShade.style.transition = 'none';
+  flip.classList.add('on');
+  setFlipAngle(dir > 0 ? 0 : -180);
+  void flip.offsetWidth;
+  return true;
+}
+/* anima o flipper (e as sombras) ate 'ang' em 'ms', com inercia (ease-out) */
+function animarFlip(ang, ms){
+  return new Promise(res => {
+    const flip = $('flipper');
+    flip.style.transition = 'transform ' + ms + 'ms cubic-bezier(.22,.61,.25,1)';
+    _fFrontShade.style.transition = 'opacity ' + ms + 'ms ease';
+    _fBackShade.style.transition  = 'opacity ' + ms + 'ms ease';
+    requestAnimationFrame(() => setFlipAngle(ang));
+    let done = false;
+    const fim = () => { if(done) return; done = true;
+      flip.removeEventListener('transitionend', fim); res(); };
+    flip.addEventListener('transitionend', fim);
+    setTimeout(fim, ms + 90);
+  });
+}
+function ocultarFlipper(){
+  const flip = $('flipper');
+  flip.classList.remove('on');
+  flip.style.transition = 'none'; flip.style.transform = 'rotateY(0deg)';
+  if(_fFrontShade){ _fFrontShade.style.transition = 'none'; _fFrontShade.style.opacity = 0; }
+  if(_fBackShade){  _fBackShade.style.transition  = 'none'; _fBackShade.style.opacity  = 0; }
+}
+
 async function virar(dir){
   if(ocupado || !pdf) return;
   if(zoom > 1.05) resetarZoom();
@@ -655,30 +719,134 @@ async function virar(dir){
   if(dir > 0 && s >= maxSpread) return;
   if(dir < 0 && s <= 0) return;
   ocupado = true;
+  const ok = await prepararFlip(dir);
+  if(!ok){ ocupado = false; return; }
+  await animarFlip(dir > 0 ? -180 : 0, FLIP_MS);
+  const ns = s + dir; atual = ns === 0 ? 1 : 2 * ns;
+  await mostrarSpread();
+  requestAnimationFrame(() => { ocultarFlipper(); ocupado = false; preload(); });
+}
 
-  const flip = $('flipper'), front = $('imgFront'), back = $('imgBack');
-  if(dir > 0){
-    front.src = await pag(rightNum(s));
-    back.src  = await pag(leftNum(s + 1));
-    $('imgRight').src = await pag(rightNum(s + 1));
-    flip.style.transition = 'none'; flip.style.transform = 'rotateY(0deg)'; flip.classList.add('on');
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      flip.style.transition = ''; flip.style.transform = 'rotateY(-180deg)'; }));
-  } else {
-    front.src = await pag(rightNum(s - 1));
-    back.src  = await pag(leftNum(s));
-    $('imgLeft').src = await pag(leftNum(s - 1));
-    flip.style.transition = 'none'; flip.style.transform = 'rotateY(-180deg)'; flip.classList.add('on');
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      flip.style.transition = ''; flip.style.transform = 'rotateY(0deg)'; }));
+/* ==================== ARRASTAR PARA VIRAR ==================== */
+/* desktop: o flipper 3D segue o cursor; mobile: a pagina desliza com o dedo.
+   Solta antes da metade (ou com flick) -> volta; passa da metade -> completa. */
+let drag = null;
+
+function iniciarDrag(e){
+  if(!pdf || ocupado || zoom > 1.05) return;
+  if(e.pointerType === 'mouse' && e.button !== 0) return;
+  if(drag){ cancelarDragImediato(); return; }   // 2o dedo: cede pro pinch-zoom
+  const r = bookEl.getBoundingClientRect();
+  const dir = (e.clientX < r.left + r.width * (solo ? 0.35 : 0.5)) ? -1 : 1;
+  if(solo){ if(atual + dir < 1 || atual + dir > P) return; }
+  else { const s = spreadDe(atual);
+    if(dir > 0 && s >= maxSpread) return; if(dir < 0 && s <= 0) return; }
+  drag = { dir, r, startX: e.clientX, lastX: e.clientX, lastT: performance.now(),
+           vX: 0, moved: false, ativo: false, id: e.pointerId, ponto: 0,
+           ang: dir > 0 ? 0 : -180 };
+  try{ bookEl.setPointerCapture(e.pointerId); }catch(_){}
+}
+
+async function moverDrag(e){
+  const d = drag; if(!d || e.pointerId !== d.id) return;
+  const dx = e.clientX - d.startX;
+  if(!d.moved){
+    if(Math.abs(dx) < 6) return;               // limiar: ainda pode ser clique
+    d.moved = true; ocupado = true;
+    d.ativo = solo ? await prepararSoloDrag(d) : await prepararFlip(d.dir);
+    if(!d.ativo){ ocupado = false; drag = null; return; }
   }
+  e.preventDefault();
+  const now = performance.now(); const dt = (now - d.lastT) || 16;
+  d.vX = (e.clientX - d.lastX) / dt; d.lastX = e.clientX; d.lastT = now;
+  solo ? arrastarSolo(d, e.clientX) : arrastarSpread(d, e.clientX);
+}
 
-  setTimeout(async () => {
-    const ns = s + dir;
-    atual = ns === 0 ? 1 : 2 * ns;
-    await mostrarSpread();
-    requestAnimationFrame(() => { flip.classList.remove('on'); ocupado = false; preload(); });
-  }, FLIP_MS + 10);
+function arrastarSpread(d, x){
+  let ratio = d.dir > 0 ? (d.r.right - x) / d.r.width
+                        : (x - d.r.left) / d.r.width;
+  ratio = Math.min(1, Math.max(0, ratio));
+  d.ponto = ratio;
+  d.ang = d.dir > 0 ? -180 * ratio : -180 * (1 - ratio);
+  setFlipAngle(d.ang);
+}
+
+async function soltarDrag(e){
+  const d = drag; if(!d || e.pointerId !== d.id) return;
+  try{ bookEl.releasePointerCapture(e.pointerId); }catch(_){}
+  drag = null;
+  if(!d.moved){ ocupado = false; virar(d.dir); return; }   // foi um clique
+  if(!d.ativo){ ocupado = false; return; }
+  const completar = d.ponto > 0.5
+      || (d.dir > 0 && d.vX < -0.35)
+      || (d.dir < 0 && d.vX >  0.35);
+  solo ? await soltarSolo(d, completar) : await soltarSpread(d, completar);
+}
+
+async function soltarSpread(d, completar){
+  const dir = d.dir;
+  const alvo = completar ? (dir > 0 ? -180 : 0) : (dir > 0 ? 0 : -180);
+  const restante = Math.abs(alvo - d.ang) / 180;
+  const ms = Math.max(130, Math.round(FLIP_MS * restante));
+  await animarFlip(alvo, ms);
+  if(completar){ const ns = flipS + dir; atual = ns === 0 ? 1 : 2 * ns; }
+  await mostrarSpread();
+  requestAnimationFrame(() => { ocultarFlipper(); ocupado = false; preload(); });
+}
+
+function cancelarDragImediato(){
+  if(!drag) return;
+  if(!solo) ocultarFlipper();
+  drag = null; ocupado = false;
+}
+
+/* --- deslize de UMA pagina (mobile) --- */
+function arrastarSolo(d, x){
+  let dx = x - d.startX;
+  dx = d.dir > 0 ? Math.min(0, dx) : Math.max(0, dx);
+  dx = Math.max(-d.solo.w, Math.min(d.solo.w, dx));
+  d.dx = dx; d.ponto = Math.abs(dx) / d.solo.w;
+  d.solo.atualEl.style.transform = 'translateX(' + dx + 'px)';
+  d.solo.outroEl.style.transform =
+    'translateX(' + ((d.dir > 0 ? d.solo.w : -d.solo.w) + dx) + 'px)';
+}
+async function prepararSoloDrag(d){
+  const alvo = atual + d.dir;
+  if(alvo < 1 || alvo > P) return false;
+  const atualEl = $('imgSolo' + soloFrente);
+  const outroKey = soloFrente === 'A' ? 'B' : 'A';
+  const outroEl = $('imgSolo' + outroKey);
+  outroEl.src = await pag(alvo);
+  try{ await outroEl.decode(); }catch(_){}
+  const w = bookEl.getBoundingClientRect().width;
+  [atualEl, outroEl].forEach(el => el.style.transition = 'none');
+  atualEl.style.opacity = '1'; atualEl.style.zIndex = 2; atualEl.style.transform = 'translateX(0px)';
+  outroEl.style.opacity = '1'; outroEl.style.zIndex = 1;
+  outroEl.style.transform = 'translateX(' + (d.dir > 0 ? w : -w) + 'px)';
+  d.solo = { atualEl, outroEl, outroKey, w, alvo };
+  return true;
+}
+async function soltarSolo(d, completar){
+  const { atualEl, outroEl, outroKey, w, alvo } = d.solo;
+  const ms = 210;
+  const finCur = completar ? (d.dir > 0 ? -w : w) : 0;
+  const finIn  = completar ? 0 : (d.dir > 0 ? w : -w);
+  [atualEl, outroEl].forEach(el =>
+    el.style.transition = 'transform ' + ms + 'ms cubic-bezier(.22,.61,.25,1)');
+  requestAnimationFrame(() => {
+    atualEl.style.transform = 'translateX(' + finCur + 'px)';
+    outroEl.style.transform = 'translateX(' + finIn + 'px)';
+  });
+  await new Promise(r => setTimeout(r, ms + 30));
+  [atualEl, outroEl].forEach(el => { el.style.transition = 'none'; el.style.transform = 'none'; });
+  if(completar){
+    atualEl.style.opacity = '0'; outroEl.style.opacity = '1';
+    soloFrente = outroKey; atual = alvo;
+    atualizarContador(); salvarPos();
+  } else {
+    outroEl.style.opacity = '0';
+  }
+  ocupado = false; preload();
 }
 
 function voltarEstante(){
@@ -695,12 +863,10 @@ $('next').onclick = () => virar(1);
 $('prev').onclick = () => virar(-1);
 $('voltar').onclick = voltarEstante;
 $('contador').addEventListener('click', abrirCampoPagina);
-$('book').addEventListener('click', (e) => {
-  if(zoom > 1.05) return;
-  const r = e.currentTarget.getBoundingClientRect();
-  const limite = r.left + r.width * (solo ? 0.35 : 0.5);
-  (e.clientX < limite) ? virar(-1) : virar(1);
-});
+bookEl.addEventListener('pointerdown', iniciarDrag);
+bookEl.addEventListener('pointermove', moverDrag);
+bookEl.addEventListener('pointerup', soltarDrag);
+bookEl.addEventListener('pointercancel', soltarDrag);
 document.addEventListener('keydown', (e) => {
   if(leitor.hidden) return;
   if(e.key === 'Escape'){ fecharPainelLivros(); return; }

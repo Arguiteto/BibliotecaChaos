@@ -193,4 +193,726 @@ async function listarLocal(){
     const arquivo = typeof item === 'string' ? item : item.arquivo;
     if(!arquivo) return null;
     const titulo = (typeof item === 'object' && item.titulo)
-      ? item.titulo : tituloDoArquivo(arquivo.replace(/^
+      ? item.titulo : tituloDoArquivo(arquivo.replace(/^Livros\//, ''));
+    const autor = (typeof item === 'object' && item.autor) ? item.autor : '';
+    return { titulo, autor, url: encodeURI(arquivo), thumb: null };
+  }).filter(Boolean);
+}
+
+/* ---------- estante de madeira (desktop) ---------- */
+function corVars(el, p){
+  el.style.setProperty('--c-lt', p[0]); el.style.setProperty('--c', p[1]);
+  el.style.setProperty('--c-dk', p[2]); el.style.setProperty('--c-txt', p[3]);
+}
+
+const GAP_TOMO = 2;                          // gap entre lombadas (igual ao CSS .vao)
+function alturaTomo(livro){ return 176 + (hash(livro.titulo) % 58); }
+function larguraTomo(livro){ return 30 + (hash(livro.titulo + 'w') % 16); }
+
+function criaTomo(livro){
+  const p = livro._pal;
+  const h = alturaTomo(livro);
+  const w = larguraTomo(livro);
+  const b = document.createElement('button');
+  b.className = 'tomo';
+  b.style.setProperty('--h', h + 'px');
+  b.style.setProperty('--w', w + 'px');
+  corVars(b, p);
+  b.title = livro.titulo;
+  b.setAttribute('aria-label', livro.titulo + (livro.autor ? ' — ' + livro.autor : ''));
+  b.innerHTML =
+    '<span class="lombada"><span class="faixa"></span>' +
+      '<span class="rot"></span><span class="faixa"></span></span>' +
+    '<span class="cover"><img class="capaImg" alt=""><span class="cover-nome"></span></span>';
+  b.querySelector('.rot').textContent = livro.titulo;
+  b.querySelector('.cover-nome').textContent = livro.titulo;
+  b.onclick = () => abrirLivro(livro);
+  const carregar = () => prepararCapa(livro);
+  b.addEventListener('pointerenter', carregar, { once: true });
+  b.addEventListener('focus', carregar, { once: true });
+  livro.nodes.push(b);
+  livro.imgs.push(b.querySelector('.capaImg'));
+  if(livro.capa) b.querySelector('.capaImg').src = livro.capa;
+  return b;
+}
+
+function fazPrat(livros, off){
+  const prat = document.createElement('div');
+  prat.className = 'prat ' + off;
+  const vao = document.createElement('div'); vao.className = 'vao';
+  livros.forEach(l => vao.appendChild(criaTomo(l)));
+  prat.appendChild(vao);
+  return prat;
+}
+
+function fazPratCentro(centro, off){
+  const prat = document.createElement('div');
+  prat.className = 'prat centro ' + off;
+  const vao = document.createElement('div'); vao.className = 'vao';
+  const meio = Math.ceil(centro.length / 2);
+  const gEsq = document.createElement('div'); gEsq.className = 'grupo';
+  centro.slice(0, meio).forEach(l => gEsq.appendChild(criaTomo(l)));
+  const brand = document.createElement('div'); brand.className = 'brand';
+  brand.innerHTML = '<b>Bibli<i>Chaos</i></b><small>arq &amp; art</small>';
+  const gDir = document.createElement('div'); gDir.className = 'grupo';
+  centro.slice(meio).forEach(l => gDir.appendChild(criaTomo(l)));
+  vao.append(gEsq, brand, gDir);
+  prat.appendChild(vao);
+  return prat;
+}
+
+/* largura util de uma prateleira, ja descontando: o deslocamento off-l/off-r
+   (8% via margin no CSS), os paddings do .prat (26px cada lado) e do .vao
+   (12px cada lado) e uma pequena folga. E com base nela que os livros sao
+   distribuidos, para nunca estourar as bordas nem sobrepor. */
+function larguraUtilPrat(){
+  const larg = caseDesktop.clientWidth || Math.min(1600, window.innerWidth * 0.98);
+  return larg * 0.92 - 76 - 6;
+}
+
+function montarCase(livros, comCentro){
+  caseDesktop.innerHTML = '';
+  if(!livros.length) return;
+  const arr = livros.slice();
+
+  let centro = [];
+  if(comCentro){
+    const nCentro = Math.min(4, arr.length);
+    const ini = Math.max(0, Math.floor((arr.length - nCentro) / 2));
+    centro = arr.splice(ini, nCentro);
+  }
+
+  // empacotamento por largura real: soma a largura de cada lombada + gaps e
+  // quebra a fileira antes de passar da largura util (nada some nas laterais).
+  const usable = larguraUtilPrat();
+  const chunks = [];
+  let cur = [], wsum = 0;
+  arr.forEach(l => {
+    const w = larguraTomo(l);
+    const add = (cur.length ? GAP_TOMO : 0) + w;
+    if(cur.length && wsum + add > usable){ chunks.push(cur); cur = []; wsum = 0; }
+    cur.push(l);
+    wsum += (cur.length > 1 ? GAP_TOMO : 0) + w;
+  });
+  if(cur.length) chunks.push(cur);
+
+  const midPos = comCentro ? Math.floor(chunks.length / 2) : -1;
+  let n = 0;
+  const off = () => (n++ % 2 === 0 ? 'off-l' : 'off-r');
+
+  chunks.forEach((c, i) => {
+    if(i === midPos) caseDesktop.appendChild(fazPratCentro(centro, off()));
+    caseDesktop.appendChild(fazPrat(c, off()));
+  });
+  if(comCentro && midPos >= chunks.length) caseDesktop.appendChild(fazPratCentro(centro, off()));
+
+  const pes = document.createElement('div');
+  pes.className = 'pes'; pes.innerHTML = '<span></span><span></span>';
+  caseDesktop.appendChild(pes);
+}
+
+/* ---------- grade de capas (celular) ---------- */
+function montarGrid(livros){
+  gridMobile.innerHTML = '';
+  if(ioCapas) ioCapas.disconnect();
+  ioCapas = new IntersectionObserver((entradas) => {
+    entradas.forEach(en => {
+      if(en.isIntersecting){
+        prepararCapa(en.target._livro);
+        ioCapas.unobserve(en.target);
+      }
+    });
+  }, { root: null, rootMargin: '400px 0px' });
+
+  livros.forEach(l => {
+    const btn = document.createElement('button');
+    btn.className = 'livro-capa';
+    btn.title = l.titulo;
+    btn.setAttribute('aria-label', l.titulo);
+    btn.innerHTML = '<div class="capa"><img alt="" loading="lazy"></div>';
+    const img = btn.querySelector('img');
+    if(l.capa) img.src = l.capa;
+    else if(l.thumb) img.src = l.thumb;
+    btn.onclick = () => abrirLivro(l);
+    btn._livro = l;
+    gridMobile.appendChild(btn);
+    l.nodes.push(btn);
+    l.imgs.push(img);
+    if(!l.capa && !l.thumb) ioCapas.observe(btn);
+  });
+}
+
+function hash(s){
+  let h = 0; for(let i = 0; i < s.length; i++){ h = (h * 31 + s.charCodeAt(i)) | 0; }
+  return Math.abs(h);
+}
+
+/* ---------- busca / filtro (reempacota a estante) ---------- */
+function aplicarFiltro(q){
+  // ignora maiusculas/minusculas e acentos; casa por palavras em qualquer ordem
+  const termos = normalizar((q || '').trim()).split(/\s+/).filter(Boolean);
+  const filtrados = termos.length
+    ? todosLivros.filter(l => termos.every(t => l._busca.includes(t)))
+    : todosLivros;
+  todosLivros.forEach(l => { l.nodes = []; l.imgs = []; });
+  montarCase(filtrados, termos.length === 0);
+  montarGrid(filtrados);
+  filtrados.forEach(l => { if(l.capa) l.imgs.forEach(im => { im.src = l.capa; }); });
+  semResultado.hidden = !(termos.length && filtrados.length === 0);
+}
+
+let buscaTimer;
+$('busca').addEventListener('input', (e) => {
+  const v = e.target.value;
+  clearTimeout(buscaTimer);
+  buscaTimer = setTimeout(() => aplicarFiltro(v), 120);
+});
+
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if(leitor.hidden && todosLivros.length) aplicarFiltro($('busca').value);
+  }, 200);
+});
+
+/* ---------- chip "continuar leitura" ---------- */
+function caixaResumo(){
+  let box = $('resumo');
+  if(!box){
+    box = document.createElement('div');
+    box.id = 'resumo'; box.className = 'resumo'; box.hidden = true;
+    const busca = document.querySelector('.busca');
+    if(busca && busca.parentNode) busca.parentNode.insertBefore(box, busca.nextSibling);
+    else { const c = document.querySelector('.conteudo'); if(c) c.appendChild(box); }
+  }
+  return box;
+}
+function montarResumo(){
+  const chaveUlt = lsGet(LS_ULT);
+  const box = caixaResumo();
+  if(!box) return;
+  const livro = chaveUlt && todosLivros.find(l => chaveLivro(l) === chaveUlt);
+  const pg = livro ? parseInt(lsGet(LS_POS + chaveUlt) || '1', 10) : 0;
+  if(!livro || pg <= 1){ box.hidden = true; return; }
+  box.hidden = false;
+  box.innerHTML = '';
+  const btn = document.createElement('button');
+  btn.className = 'continuar';
+  btn.innerHTML = '<span class="cont-label">Continuar</span>' +
+    '<b></b><span class="cont-pg">p. ' + pg + '</span>';
+  btn.querySelector('b').textContent = livro.titulo;
+  btn.onclick = () => abrirLivro(livro);
+  box.appendChild(btn);
+}
+
+/* ---------- capas (fila com concorrencia limitada) ---------- */
+const fila = []; let ativos = 0;
+function enfileirarCapa(livro){ fila.push(livro); bombear(); }
+function bombear(){
+  while(ativos < CAP_CONC && fila.length){
+    const l = fila.shift(); ativos++;
+    renderPagina1(l).finally(() => { ativos--; bombear(); });
+  }
+}
+function aplicarCapa(livro){
+  if(!livro.capa) return;
+  livro.imgs.forEach(im => { im.src = livro.capa; });
+}
+async function prepararCapa(livro){
+  if(livro.capa) return aplicarCapa(livro);
+  if(livro.thumb){ livro.capa = livro.thumb; return aplicarCapa(livro); }
+  enfileirarCapa(livro);
+}
+async function renderPagina1(livro){
+  if(livro.capa) return aplicarCapa(livro);
+  try{
+    const doc = await pdfjsLib.getDocument(livro.url).promise;
+    livro.capa = await paginaParaImagem(doc, 1, CAPA_W);
+    lsSet(LS_CAPA + chaveLivro(livro), livro.capa);
+    aplicarCapa(livro);
+  }catch(e){ /* mantem o fundo colorido */ }
+}
+
+/* ==================== RENDERIZACAO DE PAGINA ==================== */
+async function paginaParaImagem(doc, num, largura){
+  const page = await doc.getPage(num);
+  const base = page.getViewport({ scale: 1 });
+  const ratio = Math.min(window.devicePixelRatio || 1, 2);
+  const escala = (largura / base.width) * ratio;
+  const vp = page.getViewport({ scale: escala });
+  const canvas = document.createElement('canvas');
+  canvas.width = vp.width; canvas.height = vp.height;
+  await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+  return canvas.toDataURL('image/jpeg', 0.82);
+}
+
+/* ==================== ZOOM ==================== */
+const ZOOM_MIN = 1, ZOOM_MAX = 2.6;
+let zoom = 1;
+const palco = $('palco'), bookEl = $('book');
+function aplicarZoom(novo){
+  zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, novo));
+  bookEl.style.transform = `scale(${zoom})`;
+  agendarNitido();
+}
+palco.addEventListener('wheel', (e) => {
+  if(!e.ctrlKey) return;
+  e.preventDefault();
+  aplicarZoom(zoom - e.deltaY * 0.0025);
+}, { passive: false });
+let pinchDist0 = null, zoom0 = 1;
+function distancia(t){
+  const dx = t[0].clientX - t[1].clientX, dy = t[0].clientY - t[1].clientY;
+  return Math.hypot(dx, dy);
+}
+palco.addEventListener('touchstart', (e) => {
+  if(e.touches.length === 2){ pinchDist0 = distancia(e.touches); zoom0 = zoom; }
+}, { passive: true });
+palco.addEventListener('touchmove', (e) => {
+  if(e.touches.length === 2 && pinchDist0){
+    e.preventDefault();
+    aplicarZoom(zoom0 * (distancia(e.touches) / pinchDist0));
+  }
+}, { passive: false });
+palco.addEventListener('touchend', () => { pinchDist0 = null; });
+bookEl.addEventListener('dblclick', () => aplicarZoom(1));
+function resetarZoom(){ zoom = 1; bookEl.style.transform = 'scale(1)'; }
+
+/* re-renderiza a pagina visivel em alta resolucao quando ha zoom (nitidez) */
+let nitidoTimer;
+function agendarNitido(){
+  clearTimeout(nitidoTimer);
+  nitidoTimer = setTimeout(renderNitido, 260);
+}
+async function renderNitido(){
+  if(!pdf || zoom <= 1.05) return;
+  const largura = Math.min(RENDER_MAX, Math.round(RENDER_W * zoom));
+  if(solo){
+    const el = $('imgSolo' + soloFrente);
+    const url = await paginaAlta(atual, largura);
+    if(url) el.src = url;
+  } else {
+    const s = spreadDe(atual);
+    const l = leftNum(s), r = rightNum(s);
+    if(l){ const u = await paginaAlta(l, largura); if(u) $('imgLeft').src = u; }
+    if(r){ const u = await paginaAlta(r, largura); if(u) $('imgRight').src = u; }
+  }
+}
+async function paginaAlta(num, largura){
+  if(num == null || num < 1 || num > P) return '';
+  try{ return await paginaParaImagem(pdf, num, largura); }catch(e){ return ''; }
+}
+
+/* ==================== LEITOR / FOLHEAR ==================== */
+let pdf = null, P = 0, atual = 1, maxSpread = 0, ocupado = false, abrirId = 0;
+let livroAtual = null;
+let flipS = 0;
+const cache = new Map();
+
+async function pag(num){
+  if(num == null || num < 1 || num > P) return '';
+  if(cache.has(num)){ const u = cache.get(num); cache.delete(num); cache.set(num, u); return u; }
+  const url = await paginaParaImagem(pdf, num, RENDER_W);
+  cache.set(num, url);
+  if(cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
+  return url;
+}
+
+const spreadDe = (p) => Math.floor(p / 2);
+const leftNum  = (s) => (s === 0 ? null : 2 * s);
+const rightNum = (s) => (2 * s + 1 <= P ? 2 * s + 1 : null);
+
+async function abrirLivro(livro){
+  const id = ++abrirId;
+  livroAtual = livro;
+  estante.hidden = true; leitor.hidden = false;
+  $('tituloLivro').textContent = livro.titulo;
+  const load = $('carregando');
+  load.textContent = 'carregando paginas…'; load.hidden = false;
+  cache.clear(); ocupado = false;
+  resetarZoom(); resetarSolo();
+
+  let doc;
+  try{ doc = await pdfjsLib.getDocument(livro.url).promise; }
+  catch(e){
+    console.error(e);
+    if(id !== abrirId) return;
+    load.textContent = 'nao consegui abrir este livro';
+    setTimeout(() => { load.hidden = true; voltarEstante(); }, 1800);
+    return;
+  }
+  if(id !== abrirId) return;
+
+  pdf = doc; P = pdf.numPages; maxSpread = Math.floor(P / 2);
+
+  const salvo = parseInt(lsGet(LS_POS + chaveLivro(livro)) || '1', 10);
+  atual = (salvo >= 1 && salvo <= P) ? salvo : 1;
+  lsSet(LS_ULT, chaveLivro(livro));
+
+  solo ? await mostrarSolo(false) : await mostrarSpread();
+  load.hidden = true;
+  preload();
+}
+
+function salvarPos(){
+  if(livroAtual) lsSet(LS_POS + chaveLivro(livroAtual), String(atual));
+}
+
+/* uma pagina (celular) — crossfade entre duas imagens */
+let soloFrente = 'A';
+function resetarSolo(){
+  ['A', 'B'].forEach(k => {
+    const el = $('imgSolo' + k);
+    el.style.opacity = '0'; el.style.transform = 'none'; el.style.zIndex = ''; el.removeAttribute('src');
+  });
+  soloFrente = 'A';
+}
+async function mostrarSolo(animar, dir = 1){
+  const sai = $('imgSolo' + soloFrente);
+  const entraKey = soloFrente === 'A' ? 'B' : 'A';
+  const entra = $('imgSolo' + entraKey);
+  entra.src = await pag(atual);
+  try{ await entra.decode(); }catch(e){}
+  entra.style.zIndex = 2; sai.style.zIndex = 1;
+  entra.style.transition = 'none'; entra.style.opacity = '0';
+  entra.style.transform = animar ? `translateX(${dir > 0 ? 26 : -26}px)` : 'none';
+  void entra.offsetWidth;
+  entra.style.transition = ''; entra.style.opacity = '1'; entra.style.transform = 'translateX(0)';
+  sai.style.opacity = '0';
+  soloFrente = entraKey;
+  atualizarContador(); salvarPos();
+}
+
+/* duas paginas (desktop) */
+async function mostrarSpread(){
+  const s = spreadDe(atual);
+  $('imgLeft').src  = await pag(leftNum(s));
+  $('imgRight').src = await pag(rightNum(s));
+  atualizarContador(); salvarPos();
+}
+
+/* ---------- contador clicavel (pular pra pagina) ---------- */
+function atualizarContador(){
+  const c = $('contador');
+  if(solo){
+    c.textContent = atual === 1 ? 'capa' : `p. ${atual} / ${P}`;
+    $('prev').disabled = atual <= 1; $('next').disabled = atual >= P; return;
+  }
+  const s = spreadDe(atual);
+  c.textContent = s === 0 ? 'capa' : `p. ${leftNum(s)}–${rightNum(s) || leftNum(s)}`;
+  $('prev').disabled = s === 0; $('next').disabled = s >= maxSpread;
+}
+
+function abrirCampoPagina(){
+  if(!pdf) return;
+  const c = $('contador');
+  if(c.querySelector('input')) return;
+  c.innerHTML = '';
+  const inp = document.createElement('input');
+  inp.type = 'number'; inp.min = '1'; inp.max = String(P);
+  inp.value = String(atual); inp.className = 'campo-pagina';
+  inp.setAttribute('aria-label', 'Ir para a pagina');
+  c.appendChild(inp);
+  inp.focus(); inp.select();
+  const ir = () => { const n = parseInt(inp.value, 10); irParaPagina(n); };
+  inp.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if(e.key === 'Enter'){ e.preventDefault(); ir(); }
+    if(e.key === 'Escape'){ atualizarContador(); }
+  });
+  inp.addEventListener('blur', () => { atualizarContador(); });
+}
+async function irParaPagina(n){
+  if(!pdf || isNaN(n)){ atualizarContador(); return; }
+  atual = Math.min(P, Math.max(1, n));
+  resetarZoom();
+  solo ? await mostrarSolo(false) : await mostrarSpread();
+  preload();
+}
+
+function preload(){
+  let nums;
+  if(solo){ nums = [atual + 1, atual + 2, atual - 1]; }
+  else { const s = spreadDe(atual);
+    nums = [leftNum(s + 1), rightNum(s + 1), leftNum(s - 1), rightNum(s - 1)]; }
+  nums.forEach(n => { if(n && n >= 1 && n <= P) pag(n); });
+}
+
+/* ---------- nucleo da virada 3D: angulo + sombra que segue a dobra ---------- */
+let _fFront = null, _fBack = null, _fFrontShade = null, _fBackShade = null;
+function cacheFlipEls(){
+  const flip = $('flipper');
+  _fFront = $('imgFront'); _fBack = $('imgBack');
+  _fFrontShade = flip.querySelector('.face.front .shade');
+  _fBackShade  = flip.querySelector('.face.back .shade');
+}
+/* aplica o angulo (graus, 0 a -180) e ajusta a sombra: pico no meio da dobra */
+function setFlipAngle(ang){
+  const flip = $('flipper');
+  flip.style.transform = 'rotateY(' + ang + 'deg)';
+  const t = Math.min(1, Math.abs(ang) / 180);
+  const s = Math.sin(t * Math.PI);          // 0 nas pontas, 1 no meio
+  if(t < 0.5){ _fFrontShade.style.opacity = s; _fBackShade.style.opacity = 0; }
+  else       { _fFrontShade.style.opacity = 0; _fBackShade.style.opacity = s; }
+}
+/* prepara as faces do flipper para virar em 'dir' a partir do spread atual */
+async function prepararFlip(dir){
+  const s = spreadDe(atual);
+  if(dir > 0 && s >= maxSpread) return false;
+  if(dir < 0 && s <= 0) return false;
+  cacheFlipEls();
+  if(dir > 0){
+    _fFront.src = await pag(rightNum(s));
+    _fBack.src  = await pag(leftNum(s + 1));
+    $('imgRight').src = await pag(rightNum(s + 1));
+  } else {
+    _fFront.src = await pag(rightNum(s - 1));
+    _fBack.src  = await pag(leftNum(s));
+    $('imgLeft').src = await pag(leftNum(s - 1));
+  }
+  flipS = s;
+  const flip = $('flipper');
+  flip.style.transition = 'none';
+  _fFrontShade.style.transition = 'none'; _fBackShade.style.transition = 'none';
+  flip.classList.add('on');
+  setFlipAngle(dir > 0 ? 0 : -180);
+  void flip.offsetWidth;
+  return true;
+}
+/* anima o flipper (e as sombras) ate 'ang' em 'ms', com inercia (ease-out) */
+function animarFlip(ang, ms){
+  return new Promise(res => {
+    const flip = $('flipper');
+    flip.style.transition = 'transform ' + ms + 'ms cubic-bezier(.22,.61,.25,1)';
+    _fFrontShade.style.transition = 'opacity ' + ms + 'ms ease';
+    _fBackShade.style.transition  = 'opacity ' + ms + 'ms ease';
+    requestAnimationFrame(() => setFlipAngle(ang));
+    let done = false;
+    const fim = () => { if(done) return; done = true;
+      flip.removeEventListener('transitionend', fim); res(); };
+    flip.addEventListener('transitionend', fim);
+    setTimeout(fim, ms + 90);
+  });
+}
+function ocultarFlipper(){
+  const flip = $('flipper');
+  flip.classList.remove('on');
+  flip.style.transition = 'none'; flip.style.transform = 'rotateY(0deg)';
+  if(_fFrontShade){ _fFrontShade.style.transition = 'none'; _fFrontShade.style.opacity = 0; }
+  if(_fBackShade){  _fBackShade.style.transition  = 'none'; _fBackShade.style.opacity  = 0; }
+}
+
+async function virar(dir){
+  if(ocupado || !pdf) return;
+  if(zoom > 1.05) resetarZoom();
+
+  if(solo){
+    const alvo = atual + dir;
+    if(alvo < 1 || alvo > P) return;
+    ocupado = true; atual = alvo;
+    await mostrarSolo(true, dir);
+    setTimeout(() => { ocupado = false; preload(); }, 150);
+    return;
+  }
+
+  const s = spreadDe(atual);
+  if(dir > 0 && s >= maxSpread) return;
+  if(dir < 0 && s <= 0) return;
+  ocupado = true;
+  const ok = await prepararFlip(dir);
+  if(!ok){ ocupado = false; return; }
+  await animarFlip(dir > 0 ? -180 : 0, FLIP_MS);
+  const ns = s + dir; atual = ns === 0 ? 1 : 2 * ns;
+  await mostrarSpread();
+  requestAnimationFrame(() => { ocultarFlipper(); ocupado = false; preload(); });
+}
+
+/* ==================== ARRASTAR PARA VIRAR ==================== */
+/* desktop: o flipper 3D segue o cursor; mobile: a pagina desliza com o dedo.
+   Solta antes da metade (ou com flick) -> volta; passa da metade -> completa. */
+let drag = null;
+
+function iniciarDrag(e){
+  if(!pdf || ocupado || zoom > 1.05) return;
+  if(e.pointerType === 'mouse' && e.button !== 0) return;
+  if(drag){ cancelarDragImediato(); return; }   // 2o dedo: cede pro pinch-zoom
+  const r = bookEl.getBoundingClientRect();
+  const dir = (e.clientX < r.left + r.width * (solo ? 0.35 : 0.5)) ? -1 : 1;
+  if(solo){ if(atual + dir < 1 || atual + dir > P) return; }
+  else { const s = spreadDe(atual);
+    if(dir > 0 && s >= maxSpread) return; if(dir < 0 && s <= 0) return; }
+  drag = { dir, r, startX: e.clientX, lastX: e.clientX, lastT: performance.now(),
+           vX: 0, moved: false, ativo: false, id: e.pointerId, ponto: 0,
+           ang: dir > 0 ? 0 : -180 };
+  try{ bookEl.setPointerCapture(e.pointerId); }catch(_){}
+}
+
+async function moverDrag(e){
+  const d = drag; if(!d || e.pointerId !== d.id) return;
+  const dx = e.clientX - d.startX;
+  if(!d.moved){
+    if(Math.abs(dx) < 6) return;               // limiar: ainda pode ser clique
+    d.moved = true; ocupado = true;
+    d.ativo = solo ? await prepararSoloDrag(d) : await prepararFlip(d.dir);
+    if(!d.ativo){ ocupado = false; drag = null; return; }
+  }
+  e.preventDefault();
+  const now = performance.now(); const dt = (now - d.lastT) || 16;
+  d.vX = (e.clientX - d.lastX) / dt; d.lastX = e.clientX; d.lastT = now;
+  solo ? arrastarSolo(d, e.clientX) : arrastarSpread(d, e.clientX);
+}
+
+function arrastarSpread(d, x){
+  let ratio = d.dir > 0 ? (d.r.right - x) / d.r.width
+                        : (x - d.r.left) / d.r.width;
+  ratio = Math.min(1, Math.max(0, ratio));
+  d.ponto = ratio;
+  d.ang = d.dir > 0 ? -180 * ratio : -180 * (1 - ratio);
+  setFlipAngle(d.ang);
+}
+
+async function soltarDrag(e){
+  const d = drag; if(!d || e.pointerId !== d.id) return;
+  try{ bookEl.releasePointerCapture(e.pointerId); }catch(_){}
+  drag = null;
+  if(!d.moved){ ocupado = false; virar(d.dir); return; }   // foi um clique
+  if(!d.ativo){ ocupado = false; return; }
+  const completar = d.ponto > 0.5
+      || (d.dir > 0 && d.vX < -0.35)
+      || (d.dir < 0 && d.vX >  0.35);
+  solo ? await soltarSolo(d, completar) : await soltarSpread(d, completar);
+}
+
+async function soltarSpread(d, completar){
+  const dir = d.dir;
+  const alvo = completar ? (dir > 0 ? -180 : 0) : (dir > 0 ? 0 : -180);
+  const restante = Math.abs(alvo - d.ang) / 180;
+  const ms = Math.max(130, Math.round(FLIP_MS * restante));
+  await animarFlip(alvo, ms);
+  if(completar){ const ns = flipS + dir; atual = ns === 0 ? 1 : 2 * ns; }
+  await mostrarSpread();
+  requestAnimationFrame(() => { ocultarFlipper(); ocupado = false; preload(); });
+}
+
+function cancelarDragImediato(){
+  if(!drag) return;
+  if(!solo) ocultarFlipper();
+  drag = null; ocupado = false;
+}
+
+/* --- deslize de UMA pagina (mobile) --- */
+function arrastarSolo(d, x){
+  let dx = x - d.startX;
+  dx = d.dir > 0 ? Math.min(0, dx) : Math.max(0, dx);
+  dx = Math.max(-d.solo.w, Math.min(d.solo.w, dx));
+  d.dx = dx; d.ponto = Math.abs(dx) / d.solo.w;
+  d.solo.atualEl.style.transform = 'translateX(' + dx + 'px)';
+  d.solo.outroEl.style.transform =
+    'translateX(' + ((d.dir > 0 ? d.solo.w : -d.solo.w) + dx) + 'px)';
+}
+async function prepararSoloDrag(d){
+  const alvo = atual + d.dir;
+  if(alvo < 1 || alvo > P) return false;
+  const atualEl = $('imgSolo' + soloFrente);
+  const outroKey = soloFrente === 'A' ? 'B' : 'A';
+  const outroEl = $('imgSolo' + outroKey);
+  outroEl.src = await pag(alvo);
+  try{ await outroEl.decode(); }catch(_){}
+  const w = bookEl.getBoundingClientRect().width;
+  [atualEl, outroEl].forEach(el => el.style.transition = 'none');
+  atualEl.style.opacity = '1'; atualEl.style.zIndex = 2; atualEl.style.transform = 'translateX(0px)';
+  outroEl.style.opacity = '1'; outroEl.style.zIndex = 1;
+  outroEl.style.transform = 'translateX(' + (d.dir > 0 ? w : -w) + 'px)';
+  d.solo = { atualEl, outroEl, outroKey, w, alvo };
+  return true;
+}
+async function soltarSolo(d, completar){
+  const { atualEl, outroEl, outroKey, w, alvo } = d.solo;
+  const ms = 210;
+  const finCur = completar ? (d.dir > 0 ? -w : w) : 0;
+  const finIn  = completar ? 0 : (d.dir > 0 ? w : -w);
+  [atualEl, outroEl].forEach(el =>
+    el.style.transition = 'transform ' + ms + 'ms cubic-bezier(.22,.61,.25,1)');
+  requestAnimationFrame(() => {
+    atualEl.style.transform = 'translateX(' + finCur + 'px)';
+    outroEl.style.transform = 'translateX(' + finIn + 'px)';
+  });
+  await new Promise(r => setTimeout(r, ms + 30));
+  [atualEl, outroEl].forEach(el => { el.style.transition = 'none'; el.style.transform = 'none'; });
+  if(completar){
+    atualEl.style.opacity = '0'; outroEl.style.opacity = '1';
+    soloFrente = outroKey; atual = alvo;
+    atualizarContador(); salvarPos();
+  } else {
+    outroEl.style.opacity = '0';
+  }
+  ocupado = false; preload();
+}
+
+function voltarEstante(){
+  abrirId++;
+  salvarPos();
+  leitor.hidden = true; estante.hidden = false;
+  pdf = null; P = 0; cache.clear();
+  resetarZoom(); resetarSolo();
+  montarResumo();
+}
+
+/* ==================== EVENTOS ==================== */
+$('next').onclick = () => virar(1);
+$('prev').onclick = () => virar(-1);
+$('voltar').onclick = voltarEstante;
+$('contador').addEventListener('click', abrirCampoPagina);
+bookEl.addEventListener('pointerdown', iniciarDrag);
+bookEl.addEventListener('pointermove', moverDrag);
+bookEl.addEventListener('pointerup', soltarDrag);
+bookEl.addEventListener('pointercancel', soltarDrag);
+document.addEventListener('keydown', (e) => {
+  if(leitor.hidden) return;
+  if(e.key === 'Escape'){ fecharPainelLivros(); return; }
+  if(e.target && e.target.tagName === 'INPUT') return;
+  if(e.key === 'ArrowRight' || e.key === ' '){ e.preventDefault(); virar(1); }
+  if(e.key === 'ArrowLeft'){ e.preventDefault(); virar(-1); }
+});
+
+/* ==================== PAINEL LATERAL "LIVROS" ==================== */
+function construirPainelLivros(){
+  if($('btnLivros')) return;
+  const btn = document.createElement('button');
+  btn.id = 'btnLivros'; btn.className = 'btn-livros'; btn.type = 'button';
+  btn.textContent = 'Livros'; btn.setAttribute('aria-label', 'Lista de livros');
+  const back = document.createElement('div'); back.id = 'backLivros'; back.className = 'backdrop';
+  const dr = document.createElement('aside'); dr.id = 'drawerLivros'; dr.className = 'drawer';
+  dr.innerHTML = '<h3>Meus livros<button class="fechar" aria-label="Fechar">&times;</button></h3>' +
+                 '<div class="lista"></div>';
+  document.body.appendChild(back); document.body.appendChild(dr); document.body.appendChild(btn);
+  const abrir = () => { preencherListaLivros(); dr.classList.add('aberto'); back.classList.add('on'); };
+  btn.onclick = abrir;
+  back.onclick = fecharPainelLivros;
+  dr.querySelector('.fechar').onclick = fecharPainelLivros;
+}
+function fecharPainelLivros(){
+  const dr = $('drawerLivros'), back = $('backLivros');
+  if(dr) dr.classList.remove('aberto');
+  if(back) back.classList.remove('on');
+}
+function preencherListaLivros(){
+  const lista = $('drawerLivros').querySelector('.lista');
+  lista.innerHTML = '';
+  todosLivros.forEach(l => {
+    const pg = parseInt(lsGet(LS_POS + chaveLivro(l)) || '0', 10);
+    const temPg = pg > 1;
+    const it = document.createElement('button');
+    it.className = 'item'; it.type = 'button';
+    it.innerHTML = '<span class="nome"></span>' +
+      '<span class="pg' + (temPg ? '' : ' zero') + '">' + (temPg ? ('p. ' + pg) : '—') + '</span>';
+    it.querySelector('.nome').textContent = l.titulo;
+    if(livroAtual && chaveLivro(l) === chaveLivro(livroAtual)) it.style.background = 'rgba(201,111,46,.18)';
+    it.onclick = () => { fecharPainelLivros(); abrirLivro(l); };
+    lista.appendChild(it);
+  });
+}
+
+construirPainelLivros();
+iniciar();

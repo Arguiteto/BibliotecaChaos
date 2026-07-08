@@ -205,10 +205,14 @@ function corVars(el, p){
   el.style.setProperty('--c-dk', p[2]); el.style.setProperty('--c-txt', p[3]);
 }
 
+const GAP_TOMO = 2;                          // gap entre lombadas (igual ao CSS .vao)
+function alturaTomo(livro){ return 176 + (hash(livro.titulo) % 58); }
+function larguraTomo(livro){ return 30 + (hash(livro.titulo + 'w') % 16); }
+
 function criaTomo(livro){
   const p = livro._pal;
-  const h = 176 + ((hash(livro.titulo) % 58));
-  const w = 30 + ((hash(livro.titulo + 'w') % 16));
+  const h = alturaTomo(livro);
+  const w = larguraTomo(livro);
   const b = document.createElement('button');
   b.className = 'tomo';
   b.style.setProperty('--h', h + 'px');
@@ -257,18 +261,19 @@ function fazPratCentro(centro, off){
   return prat;
 }
 
-/* quantos livros por prateleira, conforme a largura disponivel */
-function porFileira(){
+/* largura util de uma prateleira, ja descontando: o deslocamento off-l/off-r
+   (8% via margin no CSS), os paddings do .prat (26px cada lado) e do .vao
+   (12px cada lado) e uma pequena folga. E com base nela que os livros sao
+   distribuidos, para nunca estourar as bordas nem sobrepor. */
+function larguraUtilPrat(){
   const larg = caseDesktop.clientWidth || Math.min(1600, window.innerWidth * 0.98);
-  // ~40px por livro (largura media + gap) => a fileira cheia encosta nas bordas
-  return Math.max(12, Math.floor((larg - 48) / 40));
+  return larg * 0.92 - 76 - 6;
 }
 
 function montarCase(livros, comCentro){
   caseDesktop.innerHTML = '';
   if(!livros.length) return;
   const arr = livros.slice();
-  const perLinha = porFileira();
 
   let centro = [];
   if(comCentro){
@@ -277,8 +282,19 @@ function montarCase(livros, comCentro){
     centro = arr.splice(ini, nCentro);
   }
 
+  // empacotamento por largura real: soma a largura de cada lombada + gaps e
+  // quebra a fileira antes de passar da largura util (nada some nas laterais).
+  const usable = larguraUtilPrat();
   const chunks = [];
-  for(let i = 0; i < arr.length; i += perLinha) chunks.push(arr.slice(i, i + perLinha));
+  let cur = [], wsum = 0;
+  arr.forEach(l => {
+    const w = larguraTomo(l);
+    const add = (cur.length ? GAP_TOMO : 0) + w;
+    if(cur.length && wsum + add > usable){ chunks.push(cur); cur = []; wsum = 0; }
+    cur.push(l);
+    wsum += (cur.length > 1 ? GAP_TOMO : 0) + w;
+  });
+  if(cur.length) chunks.push(cur);
 
   const midPos = comCentro ? Math.floor(chunks.length / 2) : -1;
   let n = 0;

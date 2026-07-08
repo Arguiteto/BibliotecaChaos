@@ -185,8 +185,11 @@ body{font-family:"Cormorant Garamond",Georgia,serif;color:var(--tinta);
 .face.front{border-radius:0 8px 8px 0;box-shadow:inset 16px 0 26px rgba(120,90,50,.14)}
 .face.back{transform:rotateY(180deg);border-radius:8px 0 0 8px;box-shadow:inset -16px 0 26px rgba(120,90,50,.18)}
 .shade{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .6s ease}
-.face.front .shade{background:linear-gradient(90deg,rgba(0,0,0,.28),rgba(0,0,0,0) 55%)}
-.face.back .shade{background:linear-gradient(270deg,rgba(0,0,0,.28),rgba(0,0,0,0) 55%)}
+/* sombra da dobra: escura junto a lombada, clareando ate um leve brilho na borda */
+.face.front .shade{background:linear-gradient(90deg,rgba(0,0,0,.46),rgba(0,0,0,.08) 52%,rgba(255,255,255,.06) 100%)}
+.face.back .shade{background:linear-gradient(270deg,rgba(0,0,0,.46),rgba(0,0,0,.08) 52%,rgba(255,255,255,.06) 100%)}
+.book{cursor:grab}
+.book:active{cursor:grabbing}
 .nav{position:absolute;bottom:40px;left:50%;transform:translateX(-50%);z-index:9;
   display:flex;align-items:center;gap:16px;opacity:0;transition:opacity .25s ease;pointer-events:none}
 .leitor:hover .nav{opacity:1;pointer-events:auto}

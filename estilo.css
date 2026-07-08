@@ -1,6 +1,8 @@
 :root{
   --wood-lt:#9a6a3a; --wood1:#7c4f2b; --wood2:#5e3a1f; --wood-dk:#3c2512;
   --wall-1:#d6c9b2; --wall-2:#b9a684; --tinta:#f2e7d2; --acento:#c96f2e;
+  /* recuo lateral base da prateleira e amplitude da escadinha */
+  --recuo:4%; --escada:8%;
 }
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
@@ -53,7 +55,9 @@ body{font-family:"Cormorant Garamond",Georgia,serif;color:var(--tinta);
   background:radial-gradient(60% 100% at 50% 0%,rgba(0,0,0,.5),transparent 70%);
   filter:blur(3px);z-index:-1}
 
-.prat{position:relative;margin-top:-14px;padding:16px 26px 0;
+.prat{position:relative;margin-top:-14px;
+  margin-left:var(--recuo);margin-right:var(--recuo);
+  padding:16px 26px 0;
   background:repeating-linear-gradient(91deg,rgba(0,0,0,.05) 0 2px,transparent 2px 11px),
     linear-gradient(180deg,var(--wood-lt),var(--wood1) 42%,var(--wood2));
   box-shadow:inset 0 3px 0 rgba(255,255,255,.14),inset 0 -2px 0 rgba(0,0,0,.28),
@@ -61,8 +65,12 @@ body{font-family:"Cormorant Garamond",Georgia,serif;color:var(--tinta);
 .prat:first-child{margin-top:0}
 .prat:nth-child(odd){border-radius:30px 30px 8px 30px}
 .prat:nth-child(even){border-radius:30px 30px 30px 8px}
-.prat.off-l{margin-right:8%}
-.prat.off-r{margin-left:8%}
+
+/* escadinha equilibrada: a soma das margens e sempre --escada,
+   entao todas as prateleiras tem a MESMA largura e so o centro
+   se desloca alternadamente. Sem vao de um lado so. */
+.prat.off-l{margin-left:0;margin-right:var(--escada)}
+.prat.off-r{margin-left:var(--escada);margin-right:0}
 
 .vao{position:relative;
   background:linear-gradient(180deg,rgba(20,10,3,.55),rgba(20,10,3,.28) 60%,rgba(20,10,3,.05));
